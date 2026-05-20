@@ -16,6 +16,7 @@ const {
 } = require('./lib/woocommerce');
 const { verifyWhopWebhook } = require('./lib/webhookVerify');
 const { parsePaymentPayload } = require('./lib/parsePaymentRequest');
+const { handleWhopyGateway, isWhopyGatewayRequest } = require('./lib/whopyGateway');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,13 +31,40 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (_req, res) => {
+  const base = BRIDGE_BASE_URL || '';
   res.json({
     service: 'whop-woocommerce-bridge',
-    bridge_url: BRIDGE_BASE_URL ? `${BRIDGE_BASE_URL}/create-payment` : '/create-payment',
-    webhook_url: BRIDGE_BASE_URL ? `${BRIDGE_BASE_URL}/webhook` : '/webhook',
+    whopy_bridge_url: base || '/',
+    whopy_note: 'Set Whopy plugin Bridge URL to your Vercel root (no /create-payment)',
+    legacy_create_payment: base ? `${base}/create-payment` : '/create-payment',
+    webhook_url: base ? `${base}/webhook` : '/webhook',
     health: '/health',
   });
 });
+
+/** Whopy plugin native proxy (POST with action + params) */
+async function handleWhopyGatewayRoute(req, res) {
+  try {
+    if (!isWhopyGatewayRequest(req.body)) {
+      return res.status(400).json({
+        error:
+          'Invalid Whopy gateway request. Plugin Bridge URL must be your Vercel root, e.g. https://project-k9230.vercel.app',
+      });
+    }
+
+    const result = await handleWhopyGateway(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('[whopy-gateway]', err.whop || err.message);
+    res.status(err.statusCode || 500).json({
+      error: err.message,
+      source: err.source || 'gateway',
+    });
+  }
+}
+
+app.post('/', handleWhopyGatewayRoute);
+app.post('/gateway', handleWhopyGatewayRoute);
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
