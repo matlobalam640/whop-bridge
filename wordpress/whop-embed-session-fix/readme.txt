@@ -4,7 +4,7 @@ Tags: whop, woocommerce, checkout, whopy
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.1.0
 License: GPLv2 or later
 
 Fixes Whop embedded checkout showing "page does not exist" when using the Whopy WooCommerce plugin with a Vercel payment bridge.
@@ -20,6 +20,10 @@ When your bridge creates a dynamic Whop checkout, Whop returns both plan_id and 
 3. Ensure Whopy Bridge URL points to your Vercel /create-payment endpoint
 
 == Changelog ==
+
+= 1.1.0 =
+* Load checkout in iframe using full checkout_url (fixes 404 embed)
+* Retry after AJAX; external JS file
 
 = 1.0.1 =
 * Support bridge_response nested in Whopy AJAX data
