@@ -121,7 +121,7 @@ app.get('/health/whop', async (_req, res) => {
       company_id: process.env.WHOP_COMPANY_ID?.trim() || 'not set',
       error: whop.message || err.message,
       hint:
-        'In Whop Dashboard → Developer → API key: enable checkout_configuration:create, plan:create, access_pass:create. Ensure WHOP_API_KEY and WHOP_COMPANY_ID in Vercel match your Whop business.',
+        'Create a new Company API key (Developer → Company API keys → Create) and enable ALL checkout/plan/payment permissions in the popup. access_pass:* scopes are for Whop Apps only — not needed here. See WHOP-API-SETUP.md.',
     });
   }
 });
@@ -181,7 +181,7 @@ app.post('/create-payment', async (req, res) => {
       wc_error: err.wcMessage || undefined,
       hint:
         err.source === 'whop'
-          ? 'Fix WHOP_API_KEY permissions in Whop Dashboard (checkout_configuration:create, plan:create).'
+          ? 'Create a new Company API key with checkout/plan CREATE permissions (see WHOP-API-SETUP.md).'
           : undefined,
     });
   }
