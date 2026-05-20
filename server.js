@@ -41,17 +41,29 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/health/wc', async (_req, res) => {
+  const keySet = Boolean(process.env.WC_KEY?.trim() && process.env.WC_SECRET?.trim());
+  const keyPrefix = process.env.WC_KEY?.trim().slice(0, 6) || 'missing';
+
   try {
     const result = await testConnection();
-    res.json({ ok: true, woocommerce: 'connected', ...result });
+    res.json({
+      ok: true,
+      woocommerce: 'connected',
+      wc_key_prefix: `${keyPrefix}...`,
+      ...result,
+    });
   } catch (err) {
     res.status(502).json({
       ok: false,
       woocommerce: 'failed',
+      wc_key_set: keySet,
+      wc_key_prefix: keySet ? `${keyPrefix}...` : 'missing',
+      auth_mode: require('./lib/woocommerce').useQueryAuth() ? 'query' : 'basic',
+      store_url: process.env.WOOCOMMERCE_URL || 'not set',
       error: wcErrorMessage(err),
       hint: isWcAuthError(err)
-        ? 'Fix WC_KEY and WC_SECRET in Vercel (Read/Write, Administrator user). Try WC_USE_QUERY_AUTH=true if on Hostinger.'
-        : 'Check WOOCOMMERCE_URL and REST API is enabled.',
+        ? 'In Vercel → Environment Variables: re-copy WC_KEY and WC_SECRET from WooCommerce REST API (Read/Write, Administrator). Redeploy after saving. Keys on Vercel often differ from your local .env file.'
+        : 'Check WOOCOMMERCE_URL and that WooCommerce REST API is enabled.',
     });
   }
 });
