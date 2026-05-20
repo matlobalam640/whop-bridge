@@ -102,9 +102,33 @@ async function resolveWooOrder(orderId) {
   }
 }
 
+app.get('/health/whop', async (_req, res) => {
+  const keyPrefix = process.env.WHOP_API_KEY?.trim().slice(0, 8) || 'missing';
+  try {
+    await require('./lib/whop').testWhopConnection();
+    res.json({
+      ok: true,
+      whop: 'connected',
+      whop_key_prefix: `${keyPrefix}...`,
+      company_id: process.env.WHOP_COMPANY_ID?.trim(),
+    });
+  } catch (err) {
+    const whop = err.whop || require('./lib/whop').whopErrorDetails(err);
+    res.status(502).json({
+      ok: false,
+      whop: 'failed',
+      whop_key_prefix: `${keyPrefix}...`,
+      company_id: process.env.WHOP_COMPANY_ID?.trim() || 'not set',
+      error: whop.message || err.message,
+      hint:
+        'In Whop Dashboard → Developer → API key: enable checkout_configuration:create, plan:create, access_pass:create. Ensure WHOP_API_KEY and WHOP_COMPANY_ID in Vercel match your Whop business.',
+    });
+  }
+});
+
 app.post('/create-payment', async (req, res) => {
   try {
-    const { order_id, amount, customer_email, currency } = req.body;
+    const { order_id, amount, customer_email, currency, return_url, test_order } = req.body;
 
     if (!order_id || amount === undefined || amount === null) {
       return res.status(400).json({
@@ -113,7 +137,9 @@ app.post('/create-payment', async (req, res) => {
       });
     }
 
-    const wcOrder = await resolveWooOrder(order_id);
+    const skipWooLookup = test_order === true || test_order === 'true';
+
+    const wcOrder = skipWooLookup ? null : await resolveWooOrder(order_id);
 
     if (wcOrder) {
       const wcTotal = parseFloat(wcOrder.total);
@@ -130,30 +156,33 @@ app.post('/create-payment', async (req, res) => {
       });
     }
 
-    const { checkoutUrl, sessionId } = await createCheckoutSession({
+    const { checkoutUrl, sessionId, planId } = await createCheckoutSession({
       amount,
       orderId: order_id,
       customerEmail: customer_email || wcOrder?.billing?.email,
       currency: currency || wcOrder?.currency?.toLowerCase() || 'usd',
+      returnUrl: return_url,
     });
 
     res.json({
       success: true,
       checkout_url: checkoutUrl,
       session_id: sessionId,
+      plan_id: planId,
     });
   } catch (err) {
-    const whopError = err.response?.data?.error;
-    console.error('[create-payment]', whopError || err.response?.data || err.wcMessage || err.message);
+    console.error('[create-payment]', err.whop || err.wcMessage || err.response?.data || err.message);
     const status = err.statusCode || err.response?.status || 500;
     res.status(status >= 400 && status < 600 ? status : 500).json({
       success: false,
-      error:
-        err.message ||
-        whopError?.message ||
-        wcErrorMessage(err) ||
-        err.response?.data?.message,
+      error: err.message || wcErrorMessage(err) || err.response?.data?.message,
+      source: err.source || (err.wcMessage ? 'woocommerce' : undefined),
+      whop_error: err.whop || undefined,
       wc_error: err.wcMessage || undefined,
+      hint:
+        err.source === 'whop'
+          ? 'Fix WHOP_API_KEY permissions in Whop Dashboard (checkout_configuration:create, plan:create).'
+          : undefined,
     });
   }
 });
