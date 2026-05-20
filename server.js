@@ -41,6 +41,8 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/health/wc', async (_req, res) => {
+  const { storeUrlDiagnostics } = require('./lib/woocommerce');
+  const urlInfo = storeUrlDiagnostics();
   const keySet = Boolean(process.env.WC_KEY?.trim() && process.env.WC_SECRET?.trim());
   const keyPrefix = process.env.WC_KEY?.trim().slice(0, 6) || 'missing';
 
@@ -50,20 +52,27 @@ app.get('/health/wc', async (_req, res) => {
       ok: true,
       woocommerce: 'connected',
       wc_key_prefix: `${keyPrefix}...`,
+      ...urlInfo,
       ...result,
     });
   } catch (err) {
+    const hints = [];
+    if (urlInfo.store_url_has_whitespace) {
+      hints.push('WOOCOMMERCE_URL in Vercel has extra spaces/tabs — edit it to exactly https://gioaccessories.com with no spaces, then redeploy.');
+    }
+    if (isWcAuthError(err)) {
+      hints.push('WC_KEY/WC_SECRET must be Read/Write keys for an Administrator user. Your Vercel key starts with ck_5d4 — create a new key in WooCommerce if needed.');
+    }
+
     res.status(502).json({
       ok: false,
       woocommerce: 'failed',
       wc_key_set: keySet,
       wc_key_prefix: keySet ? `${keyPrefix}...` : 'missing',
       auth_mode: require('./lib/woocommerce').useQueryAuth() ? 'query' : 'basic',
-      store_url: process.env.WOOCOMMERCE_URL || 'not set',
+      ...urlInfo,
       error: wcErrorMessage(err),
-      hint: isWcAuthError(err)
-        ? 'In Vercel → Environment Variables: re-copy WC_KEY and WC_SECRET from WooCommerce REST API (Read/Write, Administrator). Redeploy after saving. Keys on Vercel often differ from your local .env file.'
-        : 'Check WOOCOMMERCE_URL and that WooCommerce REST API is enabled.',
+      hint: hints.join(' '),
     });
   }
 });
