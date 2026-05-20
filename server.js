@@ -7,7 +7,13 @@ const {
   extractOrderIdFromWebhook,
   isPaymentSuccessEvent,
 } = require('./lib/whop');
-const { getOrder, markOrderPaid } = require('./lib/woocommerce');
+const {
+  getOrder,
+  markOrderPaid,
+  testConnection,
+  wcErrorMessage,
+  isWcAuthError,
+} = require('./lib/woocommerce');
 const { verifyWhopWebhook } = require('./lib/webhookVerify');
 
 const app = express();
@@ -34,6 +40,22 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/health/wc', async (_req, res) => {
+  try {
+    const result = await testConnection();
+    res.json({ ok: true, woocommerce: 'connected', ...result });
+  } catch (err) {
+    res.status(502).json({
+      ok: false,
+      woocommerce: 'failed',
+      error: wcErrorMessage(err),
+      hint: isWcAuthError(err)
+        ? 'Fix WC_KEY and WC_SECRET in Vercel (Read/Write, Administrator user). Try WC_USE_QUERY_AUTH=true if on Hostinger.'
+        : 'Check WOOCOMMERCE_URL and REST API is enabled.',
+    });
+  }
+});
+
 /**
  * Bridge URL — configure this in your WooCommerce Whop payment plugin.
  * POST body: { order_id, amount, customer_email, currency? }
@@ -44,8 +66,16 @@ async function resolveWooOrder(orderId) {
   try {
     return await getOrder(orderId);
   } catch (err) {
-    if (ALLOW_FAKE_ORDER_ID && err.response?.status === 404) {
+    if (ALLOW_FAKE_ORDER_ID && (err.response?.status === 404 || err.response?.status === 400)) {
       return null;
+    }
+    if (isWcAuthError(err)) {
+      const authErr = new Error(
+        'WooCommerce API access denied. In Vercel, verify WC_KEY and WC_SECRET match WooCommerce → Settings → Advanced → REST API (Read/Write, Administrator).'
+      );
+      authErr.statusCode = 502;
+      authErr.wcMessage = wcErrorMessage(err);
+      throw authErr;
     }
     throw err;
   }
@@ -93,10 +123,16 @@ app.post('/create-payment', async (req, res) => {
     });
   } catch (err) {
     const whopError = err.response?.data?.error;
-    console.error('[create-payment]', whopError || err.response?.data || err.message);
-    res.status(err.response?.status || 500).json({
+    console.error('[create-payment]', whopError || err.response?.data || err.wcMessage || err.message);
+    const status = err.statusCode || err.response?.status || 500;
+    res.status(status >= 400 && status < 600 ? status : 500).json({
       success: false,
-      error: whopError?.message || err.response?.data?.message || err.message,
+      error:
+        err.message ||
+        whopError?.message ||
+        wcErrorMessage(err) ||
+        err.response?.data?.message,
+      wc_error: err.wcMessage || undefined,
     });
   }
 });

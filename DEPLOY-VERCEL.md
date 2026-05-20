@@ -180,8 +180,36 @@ vercel --prod
 
 ## Troubleshooting
 
+### WordPress checkout error / "Authentication Required" (401)
+
+Your deployment has **Vercel Deployment Protection** enabled. WooCommerce cannot log in to Vercel, so every request to `/create-payment` fails.
+
+**Fix:**
+
+1. Vercel → your project → **Settings** → **Deployment Protection**
+2. For **Production**: set protection to **None** (or disable "Vercel Authentication")
+3. For **Preview**: you can keep protection on previews only
+4. **Save**, then **Redeploy** production
+
+**Use the Production URL, not a Preview URL:**
+
+| Wrong (preview, often blocked) | Right (production) |
+|--------------------------------|---------------------|
+| `https://project-k9230-3ap6coqey-zoftie-solutions.vercel.app` | `https://project-k9230.vercel.app` |
+
+Find production URL: **Deployments** → filter **Production** → open deployment → copy domain (no random hash in the middle).
+
+Test in browser (should show JSON, not a login page):
+
+```
+https://project-k9230.vercel.app/health
+```
+
+---
+
 | Problem | Fix |
 |---------|-----|
+| 401 / Authentication Required | Disable Deployment Protection (see above) |
 | 404 on `/create-payment` | Confirm `vercel.json` and `api/index.js` exist; redeploy |
 | Webhook signature fails | `WHOP_WEBHOOK_SECRET` in Vercel must match Whop dashboard exactly |
 | Whop 403 / not authorized | Add checkout permissions on the API key in Whop |
