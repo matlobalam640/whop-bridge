@@ -185,7 +185,7 @@ app.post('/create-payment', async (req, res) => {
       });
     }
 
-    const { checkoutUrl, sessionId, planId } = await createCheckoutSession({
+    const session = await createCheckoutSession({
       amount,
       orderId: order_id,
       customerEmail: customer_email || wcOrder?.billing?.email,
@@ -195,9 +195,10 @@ app.post('/create-payment', async (req, res) => {
 
     res.json({
       success: true,
-      checkout_url: checkoutUrl,
-      session_id: sessionId,
-      plan_id: planId,
+      checkout_url: session.checkoutUrl,
+      session_id: session.sessionId,
+      plan_id: session.planId,
+      embed: session.embed,
     });
   } catch (err) {
     console.error('[create-payment]', err.whop || err.wcMessage || err.response?.data || err.message);
