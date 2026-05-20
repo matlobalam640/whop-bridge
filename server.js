@@ -15,6 +15,7 @@ const {
   isWcAuthError,
 } = require('./lib/woocommerce');
 const { verifyWhopWebhook } = require('./lib/webhookVerify');
+const { parsePaymentPayload } = require('./lib/parsePaymentRequest');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +27,7 @@ app.use(cors());
 app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (_req, res) => {
   res.json({
@@ -128,16 +130,43 @@ app.get('/health/whop', async (_req, res) => {
 
 app.post('/create-payment', async (req, res) => {
   try {
-    const { order_id, amount, customer_email, currency, return_url, test_order } = req.body;
+    const parsed = parsePaymentPayload(req);
+    let { order_id, amount, customer_email, currency, return_url, test_order } = parsed;
 
-    if (!order_id || amount === undefined || amount === null) {
+    let skipWooLookup =
+      test_order === true ||
+      test_order === 'true' ||
+      test_order === 1 ||
+      test_order === '1';
+
+    // Whopy may send only amount before order exists — load total from WC order if we have id
+    if (order_id && (amount === undefined || amount === null)) {
+      try {
+        const wcOrder = await getOrder(order_id);
+        amount = parseFloat(wcOrder.total);
+        customer_email = customer_email || wcOrder.billing?.email;
+        currency = currency || wcOrder.currency?.toLowerCase();
+      } catch {
+        // handled below
+      }
+    }
+
+    // Cart checkout: amount without order_id (plugin / pending checkout)
+    if (!order_id && amount > 0 && ALLOW_FAKE_ORDER_ID) {
+      order_id = `wc-${Date.now()}`;
+      skipWooLookup = true;
+    }
+
+    if (!order_id || amount === undefined || amount === null || amount <= 0) {
       return res.status(400).json({
         success: false,
         error: 'order_id and amount are required',
+        hint:
+          'Send JSON or form fields: order_id (or orderId) and amount (or total). Whopy plugin must POST to /create-payment with cart total.',
+        received_keys: parsed.received_keys,
+        content_type: parsed.content_type,
       });
     }
-
-    const skipWooLookup = test_order === true || test_order === 'true';
 
     const wcOrder = skipWooLookup ? null : await resolveWooOrder(order_id);
 
